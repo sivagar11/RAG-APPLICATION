@@ -50,10 +50,27 @@ DATA_DIR = os.path.abspath(DATA_DIR) if not os.path.isabs(DATA_DIR) else DATA_DI
 IMAGE_DIR = os.path.abspath(IMAGE_DIR) if not os.path.isabs(IMAGE_DIR) else IMAGE_DIR
 PERSIST_DIR = os.path.abspath(PERSIST_DIR) if not os.path.isabs(PERSIST_DIR) else PERSIST_DIR
 
-# === RAG Configuration (for future use) ===
+# === RAG Configuration ===
 SIMILARITY_TOP_K = int(os.getenv("SIMILARITY_TOP_K", "3"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1024"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "20"))
+
+# === Vector Database Configuration ===
+VECTOR_DB_TYPE = os.getenv("VECTOR_DB_TYPE", "qdrant").lower()  # local, qdrant, chroma
+QDRANT_URL = os.getenv("QDRANT_URL", "https://44f45e11-cf16-4ec7-8bb2-b4fb00dbdfe4.us-east4-0.gcp.cloud.qdrant.io:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.rm9IXxgo6vIetuUT7D8o-0lG69R_cCPpyya6S2jzpg8")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "rag_documents")
+
+# === Image Storage Configuration ===
+IMAGE_STORAGE_TYPE = os.getenv("IMAGE_STORAGE_TYPE", "local").lower()  # local, s3, r2
+IMAGE_STORAGE_FORMAT = os.getenv("IMAGE_STORAGE_FORMAT", "base64").lower()  # url, base64, hybrid
+
+# S3 Configuration
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "rag-mag-images")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")  # For S3-compatible services (R2, MinIO)
 
 
 def validate_config():

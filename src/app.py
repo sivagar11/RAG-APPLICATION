@@ -10,15 +10,15 @@ from llama_index.core.schema import MetadataMode
 from llama_index.core.base.response.schema import Response
 from llama_index.core.llms import ChatMessage, TextBlock, ImageBlock
 
-# Import configuration
+# Import configuration and ingestion module
 from config import (
-    PERSIST_DIR,
     IMAGE_DIR,
     LLM_PROVIDER,
     SIMILARITY_TOP_K,
     validate_config,
-    get_llm_config,
+    IMAGE_STORAGE_FORMAT,
 )
+from ingestion import get_index
 
 # Validate configuration
 validate_config()
@@ -27,48 +27,17 @@ validate_config()
 IMAGE_BASE_DIR = Path(IMAGE_DIR)
 
 # === UI HEADER ===
-st.title("🤖 Engineering Manual Assistant (Persistent RAG)")
-# st.caption("Ask questions about the VPOS Touch Installation Guide")
+st.title("🤖 RAG-MAG - Multimodal Document Assistant")
+st.caption(f"Powered by Qdrant Cloud + {LLM_PROVIDER.upper()}")
 
-# === Load Saved Index ===
-if os.path.exists(PERSIST_DIR):
-    st.info(f"📦 Found existing vector index — loading with {LLM_PROVIDER.upper()}...")
-    storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-    index = load_index_from_storage(storage_context)
-    
-    # Set up LLM + embedding model based on provider
-    llm_config = get_llm_config()
-    
-    if LLM_PROVIDER == "openai":
-        from llama_index.embeddings.openai import OpenAIEmbedding
-        from llama_index.llms.openai import OpenAI
-        
-        Settings.embed_model = OpenAIEmbedding(
-            model=llm_config["embedding_model"], 
-            api_key=llm_config["embedding_api_key"]
-        )
-        Settings.llm = OpenAI(
-            model=llm_config["llm_model"], 
-            api_key=llm_config["llm_api_key"]
-        )
-    elif LLM_PROVIDER == "gemini":
-        from llama_index.llms.google_genai import GoogleGenAI
-        from llama_index.embeddings.openai import OpenAIEmbedding
-        
-        # Using Gemini for LLM, OpenAI for embeddings (hybrid approach)
-        Settings.embed_model = OpenAIEmbedding(
-            model=llm_config["embedding_model"], 
-            api_key=llm_config["embedding_api_key"]
-        )
-        Settings.llm = GoogleGenAI(
-            model=llm_config["llm_model"], 
-            api_key=llm_config["llm_api_key"]
-        )
-    else:
-        st.error(f"❌ Unknown LLM_PROVIDER: {LLM_PROVIDER}. Use 'openai' or 'gemini'")
-        st.stop()
-else:
-    st.error("❌ No saved index found! Run parse.py first.")
+# === Load Index from Qdrant ===
+try:
+    st.info(f"📦 Loading index from Qdrant Cloud...")
+    index = get_index()
+    st.success(f"✅ Connected! Using {LLM_PROVIDER.upper()} LLM")
+except Exception as e:
+    st.error(f"❌ Failed to load index: {e}")
+    st.info("💡 Make sure you've run 'make parse' to index your documents")
     st.stop()
 
 # === PROMPT BLOCKS ===
@@ -93,8 +62,17 @@ class MultimodalQueryEngine(CustomQueryEngine):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def _resolve_image_path(self, img_path_str: str) -> Path | None:
-        """Resolve stored metadata image path to actual existing file."""
+    def _resolve_image_path(self, node) -> Path | str | None:
+        """Resolve image from node metadata (supports base64 and file paths)."""
+        # Check for base64 image first
+        if "image_b64" in node.metadata:
+            return node.metadata["image_b64"]  # Return base64 string
+        
+        # Fallback to file path
+        img_path_str = node.metadata.get("image_path")
+        if not img_path_str:
+            return None
+            
         img_path = Path(img_path_str).expanduser()
         if not img_path.exists():
             # Try recovering by filename search inside IMAGE_BASE_DIR
@@ -113,11 +91,14 @@ class MultimodalQueryEngine(CustomQueryEngine):
         # Collect valid image blocks
         image_blocks = []
         for n in nodes:
-            img_path_str = n.metadata.get("image_path")
-            if img_path_str:
-                resolved_path = self._resolve_image_path(img_path_str)
-                if resolved_path:
-                    image_blocks.append(ImageBlock(path=str(resolved_path)))
+            resolved = self._resolve_image_path(n)
+            if resolved:
+                if isinstance(resolved, str) and resolved.startswith("data:image"):
+                    # Base64 image
+                    image_blocks.append(ImageBlock(url=resolved))
+                else:
+                    # File path
+                    image_blocks.append(ImageBlock(path=str(resolved)))
 
         context_str = "\n\n".join(
             [r.get_content(metadata_mode=MetadataMode.LLM) for r in nodes]
@@ -164,21 +145,24 @@ if st.button("Ask"):
                 # === Source display — show IMAGES ONLY ===
                 st.markdown("### 📸 Source Images")
                 for i, node in enumerate(response.source_nodes):
-                    img_path_str = node.node.metadata.get("image_path")
-                    if not img_path_str:
-                        continue
-
-                    resolved_path = query_engine._resolve_image_path(img_path_str)
-                    if resolved_path and resolved_path.exists():
-                        with st.expander(f"Source {i+1} — {resolved_path.name}"):
-                            st.image(
-                                str(resolved_path),
-                                caption=f"Extracted diagram ({resolved_path.name})",
-                                use_container_width=True,
-                            )
+                    resolved = query_engine._resolve_image_path(node.node)
+                    page_num = node.node.metadata.get("page_num", "?")
+                    
+                    if resolved:
+                        if isinstance(resolved, str) and resolved.startswith("data:image"):
+                            # Base64 image from Qdrant
+                            with st.expander(f"📄 Source {i+1} — Page {page_num}"):
+                                st.markdown(f'<img src="{resolved}" style="width:100%"/>', unsafe_allow_html=True)
+                        elif hasattr(resolved, 'exists') and resolved.exists():
+                            # File path
+                            with st.expander(f"📄 Source {i+1} — Page {page_num}"):
+                                st.image(str(resolved), use_container_width=True)
+                        else:
+                            with st.expander(f"📄 Source {i+1}"):
+                                st.warning(f"⚠️ Image not found")
                     else:
-                        with st.expander(f"Source {i+1}"):
-                            st.warning(f"⚠️ Image not found: {img_path_str}")
+                        with st.expander(f"📄 Source {i+1}"):
+                            st.warning(f"⚠️ Image not available")
 
             except Exception as e:
                 st.error(f"❌ Error: {e}")

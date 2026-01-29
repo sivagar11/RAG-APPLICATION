@@ -9,6 +9,10 @@ llama-index-embeddings-openai
 llama-index-llms-openai
 llama-index-llms-google-genai
 
+# Vector Database
+llama-index-vector-stores-qdrant
+qdrant-client>=1.7.0
+
 # API Clients (dependencies)
 openai
 google-generativeai
@@ -17,6 +21,10 @@ google-generativeai
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart  # For file uploads
+
+# Cloud Storage (Optional - for S3 integration)
+boto3>=1.28.0  # AWS S3
+# cloudflare-r2>=0.1.0  # Alternative: Cloudflare R2
 
 # Supporting Libraries
 pydantic>=2.0.0

@@ -111,3 +111,13 @@ setup:  ## Initial setup: copy env.example to .env
 		echo "⚠️  .env already exists. Skipping..."; \
 	fi
 
+# === Qdrant Commands ===
+
+qdrant-status:  ## Check Qdrant Cloud connection
+	@python3 -c "from src.ingestion.vector_store import check_vector_db_connection; import sys; sys.exit(0 if check_vector_db_connection() else 1)" && \
+		echo "✅ Qdrant Cloud connection OK" || \
+		echo "❌ Qdrant Cloud connection failed"
+
+qdrant-info:  ## Show Qdrant collection info
+	@python3 -c "from src.ingestion import get_index; idx = get_index(); print(f'Documents: {len(idx.ref_doc_info)}')"
+

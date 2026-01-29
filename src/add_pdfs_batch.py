@@ -21,7 +21,6 @@ from llama_index.core import Settings
 # Import configuration
 from config import (
     DATA_DIR,
-    PERSIST_DIR,
     validate_config,
 )
 
@@ -45,9 +44,14 @@ def get_data_files(data_dir=DATA_DIR):
 async def main():
     """Add PDFs from data directory to existing index."""
     
-    # Check if index exists
-    if not os.path.exists(PERSIST_DIR) or not os.listdir(PERSIST_DIR):
-        print("❌ No existing index found!")
+    print("📦 Connecting to Qdrant Cloud...")
+    
+    # Try to load existing index to verify connection
+    try:
+        existing_docs = list_documents()
+        print(f"✅ Connected! Currently indexed: {len(existing_docs)} document(s)")
+    except Exception as e:
+        print(f"❌ Cannot connect to Qdrant: {e}")
         print("   Please run 'python src/parse.py' first to create the initial index.")
         return
     
@@ -61,12 +65,6 @@ async def main():
     print(f"📄 Found {len(files)} PDF file(s):")
     for f in files:
         print(f"   - {os.path.basename(f)}")
-    
-    # Load existing index and check what's already there
-    print("\n📦 Loading existing index...")
-    existing_docs = list_documents()
-    
-    print(f"   Currently indexed: {len(existing_docs)} document(s)")
     
     # Build set of existing filenames to avoid duplicates
     existing_filenames = set()

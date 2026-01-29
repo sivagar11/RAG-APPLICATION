@@ -22,6 +22,7 @@ from config import (
     LLAMAPARSE_TABLE_EXTRACTION,
     LLAMAPARSE_OUTPUT_TABLES_HTML,
     IMAGE_DIR,
+    IMAGE_STORAGE_FORMAT,
 )
 
 
@@ -106,6 +107,20 @@ async def parse_pdf(pdf_path: str, doc_id: str) -> List[TextNode]:
         text_node.metadata["filename"] = filename
         text_node.metadata["page_number"] = i + 1
         text_node.metadata["image_path"] = image_node.image_path
+        
+        # If base64 format, encode and store in metadata
+        if IMAGE_STORAGE_FORMAT == "base64":
+            try:
+                import base64
+                with open(image_node.image_path, "rb") as img_file:
+                    image_data = img_file.read()
+                    text_node.metadata["image_b64"] = base64.b64encode(image_data).decode('utf-8')
+            except Exception as e:
+                print(f"Warning: Failed to encode image to base64: {e}")
+        
+        # CRITICAL: Exclude base64 image from embedding (it's too large!)
+        text_node.excluded_embed_metadata_keys = ["image_b64", "image_path"]
+        text_node.excluded_llm_metadata_keys = []  # LLM can see everything in prompts
         
         processed_nodes.append(text_node)
     

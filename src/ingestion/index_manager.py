@@ -12,7 +12,8 @@ from llama_index.core import VectorStoreIndex, StorageContext, load_index_from_s
 # Import configuration
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from config import PERSIST_DIR, LLM_PROVIDER, get_llm_config
+from config import PERSIST_DIR, LLM_PROVIDER, VECTOR_DB_TYPE, get_llm_config
+from .vector_store import get_vector_store, get_storage_context
 
 
 # Global index instance (singleton pattern)
@@ -63,24 +64,43 @@ def get_index(force_reload: bool = False) -> VectorStoreIndex:
         VectorStoreIndex instance
         
     Raises:
-        FileNotFoundError: If storage directory doesn't exist
+        FileNotFoundError: If storage directory doesn't exist (local mode)
         ValueError: If index cannot be loaded
     """
     global _index
     
     if force_reload or _index is None:
-        if not os.path.exists(PERSIST_DIR):
-            raise FileNotFoundError(
-                f"Storage directory not found: {PERSIST_DIR}. "
-                "Run parse.py first to create the initial index."
-            )
-        
         # Setup LLM settings
         _setup_llm_settings()
         
-        # Load index from storage
-        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-        _index = load_index_from_storage(storage_context)
+        if VECTOR_DB_TYPE == "local":
+            # Local storage mode (original implementation)
+            if not os.path.exists(PERSIST_DIR):
+                raise FileNotFoundError(
+                    f"Storage directory not found: {PERSIST_DIR}. "
+                    "Run parse.py first to create the initial index."
+                )
+            
+            storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
+            _index = load_index_from_storage(storage_context)
+        else:
+            # External vector DB mode (Qdrant, etc.)
+            vector_store = get_vector_store()
+            storage_context = get_storage_context(vector_store)
+            
+            try:
+                # Try to load existing index
+                _index = VectorStoreIndex.from_vector_store(
+                    vector_store,
+                    storage_context=storage_context
+                )
+            except Exception as e:
+                print(f"Creating new index in {VECTOR_DB_TYPE}: {e}")
+                # Create new index if loading fails
+                _index = VectorStoreIndex(
+                    [],
+                    storage_context=storage_context
+                )
     
     return _index
 
@@ -137,7 +157,8 @@ def persist_index():
     """Persist the current index to storage.
     
     This must be called after any modifications (insert, delete, update)
-    to save changes to disk.
+    to save changes. For external vector DBs, this is handled automatically.
+    For local storage, this saves to disk.
     
     Raises:
         RuntimeError: If no index is loaded
@@ -147,6 +168,12 @@ def persist_index():
     if _index is None:
         raise RuntimeError("No index loaded. Call get_index() first.")
     
-    os.makedirs(PERSIST_DIR, exist_ok=True)
-    _index.storage_context.persist(persist_dir=PERSIST_DIR)
+    if VECTOR_DB_TYPE == "local":
+        # Only persist to disk for local storage
+        os.makedirs(PERSIST_DIR, exist_ok=True)
+        _index.storage_context.persist(persist_dir=PERSIST_DIR)
+    else:
+        # External vector DBs auto-persist, but we can force a sync
+        # Qdrant/Chroma handle persistence automatically
+        pass
 

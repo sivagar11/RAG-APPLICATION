@@ -6,10 +6,10 @@ Multimodal RAG system that processes PDF manuals and answers questions using bot
 
 ```bash
 # 1. Setup
-cp env.example .env  # Add your API keys
+cp env.example .env  # Configure with your API keys
 pip install -r requirements.txt
 
-# 2. Parse documents (initial batch load)
+# 2. Parse documents (stores in Qdrant Cloud)
 make parse  # or: python src/parse.py
 
 # 3. Choose your interface:
@@ -20,6 +20,12 @@ make run    # or: streamlit run src/app.py
 # Option B: FastAPI REST API (for programmatic access)
 make api    # or: cd src && uvicorn api.main:app --reload
 ```
+
+**Architecture:**
+- **Vector Database**: Qdrant Cloud (for embeddings + images)
+- **Image Storage**: Base64 encoded in Qdrant
+- **LLM**: OpenAI or Gemini (configurable)
+- **Parser**: LlamaParse for multimodal PDF extraction
 
 ## Table of Contents
 
@@ -53,57 +59,44 @@ LLAMAPARSE_API_KEY=your_key_here
 
 # LLM Provider
 LLM_PROVIDER=gemini  # or openai
+
+# Vector Database (Qdrant Cloud - pre-configured)
+VECTOR_DB_TYPE=qdrant
+QDRANT_URL=https://your-cluster.gcp.cloud.qdrant.io:6333
+QDRANT_API_KEY=your_qdrant_key
+
+# Image Storage
+IMAGE_STORAGE_FORMAT=base64  # Images stored in Qdrant
 ```
 
-### Optional Settings (with defaults)
+### Optional Settings
 
-**LlamaParse Configuration:**
-- `LLAMAPARSE_MODEL=openai-gpt-4-1-mini` - Parser model
-- `LLAMAPARSE_REGION=na` - Region (na or eu)
-- `LLAMAPARSE_PARSE_MODE=parse_page_with_agent` - Parsing mode
-- `LLAMAPARSE_HIGH_RES_OCR=true` - High-res OCR
-- `LLAMAPARSE_TABLE_EXTRACTION=true` - Extract tables
-- `LLAMAPARSE_OUTPUT_TABLES_HTML=true` - Tables as HTML
-
-**OpenAI Models** (when `LLM_PROVIDER=openai`):
-- `OPENAI_LLM_MODEL=gpt-4o-mini` - LLM model
-- `OPENAI_EMBEDDING_MODEL=text-embedding-3-large` - Embedding model
-
-**Gemini Models** (when `LLM_PROVIDER=gemini`):
-- `GEMINI_LLM_MODEL=gemini-2.5-flash` - LLM model
-- `GEMINI_EMBEDDING_MODEL=text-embedding-3-small` - Embedding model (via OpenAI)
-
-**Paths:**
-- `DATA_DIR=./data` - PDFs to process
-- `IMAGE_DIR=./data_images` - Extracted images
-- `PERSIST_DIR=./storage` - Vector index
-
-**RAG Settings:**
-- `SIMILARITY_TOP_K=3` - Number of chunks to retrieve per query
-- `CHUNK_SIZE=1024` - Text chunk size for indexing
-- `CHUNK_OVERLAP=20` - Overlap between chunks
+See `env.example` for all available configuration options including:
+- LlamaParse settings (model, region, OCR options)
+- LLM model selection (OpenAI/Gemini)
+- RAG parameters (chunk size, similarity threshold)
+- Directory paths
 
 ---
 
 ## Document Ingestion Workflow
 
-### Phase 1: Initial Batch Load (One Time)
+### Initial Setup
 
 ```bash
-# Put all your PDFs in data/
+# Put your PDFs in data/
 cp /path/to/manuals/*.pdf data/
 
-# Run initial batch parser (creates fresh index)
+# Parse and index to Qdrant Cloud
 make parse
 ```
 
 **What this does:**
-- ✅ Processes ALL PDFs in `data/`
-- ✅ Creates vector index in `storage/`
-- ✅ Extracts images to `data_images/{doc_id}/`
-- ✅ Assigns UUID to each document
-- ✅ Sets proper SOURCE relationships for tracking
-- ⚠️ **OVERWRITES** any existing index
+- ✅ Parses ALL PDFs in `data/` with LlamaParse
+- ✅ Extracts text and page images
+- ✅ Converts images to base64
+- ✅ Stores vectors and images in Qdrant Cloud
+- ✅ Assigns UUID to each document for tracking
 
 **Output:**
 ```
@@ -115,47 +108,26 @@ make parse
 📊 Summary:
    Documents indexed: 25
    Total pages: 1,247
-   Document IDs:
-      a3f5e891-abc1-... → manual1.pdf
-      b7c2d441-def2-... → manual2.pdf
+   Stored in Qdrant Cloud
 ```
 
-### Phase 2: Deploy API (Future)
+### Add More Documents
 
-Once you build the FastAPI backend, it will:
-- ✅ Load existing index from `storage/`
-- ✅ Add/delete/update documents via API
-- ✅ Persist changes immediately
-- ✅ Preserve batch-loaded documents
-
-### Phase 3: Add More PDFs (Optional)
-
-If you need to batch-add more PDFs after API is live:
-
+**Via API:**
 ```bash
-# Put new PDFs in data/
-cp /path/to/more_manuals/*.pdf data/
+# Upload via REST API
+curl -X POST "http://localhost:8000/documents" \
+  -F "file=@new-manual.pdf"
+```
 
-# Add to existing index (SAFE - preserves API documents)
+**Via Batch Script:**
+```bash
+# Add new PDFs to data/
+cp /path/to/more/*.pdf data/
+
+# Add to existing index (preserves existing documents)
 make add-batch
 ```
-
-**What this does:**
-- ✅ Loads EXISTING index
-- ✅ Checks for duplicates (by filename)
-- ✅ Only adds NEW files
-- ✅ **PRESERVES** API-added documents
-
-### Decision Matrix: Which Script to Use?
-
-| Scenario | Command | Safe for API docs? |
-|----------|---------|-------------------|
-| First time setup | `make parse` | N/A (no API yet) |
-| API is live, add more PDFs | `make add-batch` | ✅ YES |
-| Start completely fresh | `make parse` | ❌ NO (destroys API docs) |
-| Testing/development | `make parse` | N/A |
-
-**⚠️ Warning:** Never run `make parse` after API goes live unless you want to rebuild from scratch!
 
 ---
 
@@ -163,49 +135,56 @@ make add-batch
 
 ### Overview
 
-The system includes a dedicated document management module (`src/ingestion/`) that provides CRUD operations with proper LlamaIndex document tracking.
+The system includes a dedicated document management module (`src/ingestion/`) that provides CRUD operations with Qdrant Cloud storage.
 
 ### Key Features
 
+✅ **Qdrant Cloud Storage**: Vectors and images stored in managed cloud database  
+✅ **Base64 Images**: Images encoded and stored directly in Qdrant  
 ✅ **Document Tracking**: Proper SOURCE relationships enable document-level operations  
 ✅ **CRUD Operations**: Add, delete, update, and list documents programmatically  
-✅ **Image Management**: Document-specific directories prevent conflicts  
 ✅ **UUID System**: Each document gets a unique identifier for tracking  
-✅ **API-Ready**: Functions ready to wrap in FastAPI endpoints  
+✅ **Multi-Worker Ready**: Qdrant supports concurrent access from multiple API workers  
 
 ### Core Components
 
 #### 1. **parser.py** - LlamaParse Wrapper
 - Wraps LlamaParse with SOURCE relationship configuration
-- Creates document-specific image directories: `data_images/{doc_id}/`
-- Attaches metadata: document_id, filename, page_number, image_path
+- Extracts text and page screenshots from PDFs
+- Encodes images to base64 for Qdrant storage
+- Attaches metadata: document_id, filename, page_number, image_b64
 
 #### 2. **index_manager.py** - Index Lifecycle
+- Manages connection to Qdrant Cloud
 - Singleton pattern for efficient index access
 - Configures LLM and embedding models
-- Handles persistence and reloading
-- Thread-safe write operations
+- Supports both local and cloud vector stores
 
 #### 3. **document_manager.py** - CRUD Operations
-- `add_document(pdf_path, doc_id=None)` - Add PDF to index
-- `delete_document(doc_id)` - Remove document and images
+- `add_document(pdf_path, doc_id=None)` - Add PDF to Qdrant
+- `delete_document(doc_id)` - Remove document from Qdrant
 - `update_document(doc_id, new_pdf_path)` - Replace document
 - `list_documents()` - Get all indexed documents
 - `get_document_info(doc_id)` - Detailed document information
+
+#### 4. **vector_store.py** - Vector Database Management
+- Handles Qdrant Cloud connection
+- Manages vector store configuration
+- Supports multiple backend options (Qdrant, local, etc.)
 
 ### Usage Examples
 
 **CLI (Batch Processing):**
 ```bash
-make parse        # Initial load - builds fresh index
-make add-batch    # Add more - preserves existing
+make parse        # Parse and upload to Qdrant Cloud
+make add-batch    # Add more documents (preserves existing)
 ```
 
 **Python (Programmatic):**
 ```python
 from ingestion import add_document, delete_document, list_documents
 
-# Add a document
+# Add a document (uploads to Qdrant Cloud)
 result = await add_document("manual.pdf")
 doc_id = result['document_id']
 
@@ -214,18 +193,18 @@ docs = list_documents()
 for doc_id, info in docs.items():
     print(f"{doc_id}: {info['metadata']['filename']}")
 
-# Delete document (removes from index + images)
+# Delete document (removes from Qdrant)
 delete_document(doc_id)
 ```
 
 **Testing:**
 ```bash
-python scripts/test_ingestion.py  # Comprehensive test suite
+python scripts/test_ingestion.py  # Test CRUD operations
 ```
 
 ### Technical Implementation
 
-**SOURCE Relationships (Critical):**
+**SOURCE Relationships:**
 ```python
 from llama_index.core.schema import NodeRelationship, RelatedNodeInfo
 
@@ -233,33 +212,27 @@ from llama_index.core.schema import NodeRelationship, RelatedNodeInfo
 node.relationships[NodeRelationship.SOURCE] = RelatedNodeInfo(node_id=doc_id)
 ```
 
-Without this, `delete_ref_doc()` won't work and documents can't be tracked.
+This enables proper document tracking in Qdrant and allows deletion by document ID.
 
-**Image Organization:**
-```
-data_images/
-├── {doc-uuid-1}/
-│   ├── page_1.jpg
-│   ├── page_2.jpg
-│   └── ...
-├── {doc-uuid-2}/
-│   └── ...
+**Base64 Image Storage:**
+```python
+# Images encoded and stored in node metadata
+node.metadata["image_b64"] = base64.b64encode(image_data).decode('utf-8')
 ```
 
-This prevents filename conflicts and enables clean deletion.
+Images are stored directly in Qdrant alongside text embeddings for atomic operations.
 
-### Limitations & Solutions
+### Scalability
 
-| Limitation | Impact | Solution |
-|------------|--------|----------|
-| Single process only | Index not shared across processes | Use external vector DB (Chroma/Qdrant) |
-| Manual persistence | Changes must be explicitly saved | CRUD functions handle automatically |
-| Local file storage | Not scalable for cloud | Migrate to S3/CDN for images |
-| No transactions | Operations not atomic | Add try/except with rollback logic |
+With Qdrant Cloud:
+- ✅ **Multi-Process**: Multiple API workers can access the same index
+- ✅ **Automatic Persistence**: Changes are immediately synced to cloud
+- ✅ **Concurrent Access**: Thread-safe operations
+- ✅ **Horizontal Scaling**: Add more API workers as needed
 
-### API Integration (Ready)
+### API Integration
 
-The ingestion module is designed for FastAPI:
+The ingestion module works seamlessly with FastAPI:
 
 ```python
 from fastapi import FastAPI, UploadFile, BackgroundTasks
@@ -571,53 +544,42 @@ python scripts/test_ingestion.py  # Run full test suite
 
 ## Tech Stack
 
+- **Qdrant Cloud** - Managed vector database for embeddings and images
 - **LlamaIndex** - RAG framework with document tracking
 - **LlamaParse** - PDF parsing with multimodal extraction
 - **OpenAI/Gemini** - LLM and embeddings
 - **Streamlit** - Web UI for query interface
-- **FastAPI** - REST API for document management ✅
+- **FastAPI** - REST API for document management
 - **Uvicorn** - ASGI server for FastAPI
 - **Pydantic** - Data validation and serialization
-- **pytest** - Testing framework (43+ tests)
+- **pytest** - Testing framework
 
 ---
 
 ## Next Steps
 
-### Phase 1: Validation ✅ (Completed)
-- [x] Ingestion module implemented
+### Completed ✅
+- [x] Qdrant Cloud integration
+- [x] Base64 image storage
 - [x] Document tracking with SOURCE relationships
-- [x] CLI batch processing
-- [x] Test suite
-- [x] Validate with your PDFs
+- [x] FastAPI REST API
+- [x] Streamlit UI
+- [x] Multi-worker support
+- [x] CRUD operations
 
-### Phase 2: API Development ✅ (Completed)
-- [x] Create `src/api/` directory
-- [x] Build FastAPI application
-- [x] Implement endpoints:
-  - [x] `POST /documents` - Upload PDF
-  - [x] `DELETE /documents/{id}` - Delete document
-  - [x] `PUT /documents/{id}` - Update document
-  - [x] `GET /documents` - List all documents
-  - [x] `POST /query` - Query the RAG system
-- [x] Add background job processing
-- [x] Implement image serving
-- [x] Auto-generated API documentation
-- [x] Example scripts and usage guides
-
-### Phase 3: Dockerization
-- [ ] Write Dockerfile
-- [ ] Docker Compose setup
-- [ ] Volume management
-- [ ] Environment configuration
-
-### Phase 4: Production Hardening
-- [ ] External vector DB (Chroma/Qdrant)
-- [ ] S3/CDN for image storage
-- [ ] PostgreSQL for metadata
-- [ ] Message queue (RQ/Celery)
+### Production Enhancements
+- [ ] Monitoring & logging (Prometheus, Grafana)
 - [ ] Authentication & authorization
-- [ ] Monitoring & logging
+- [ ] Rate limiting
+- [ ] Caching layer (Redis)
+- [ ] CI/CD pipeline
+- [ ] Automated testing in pipeline
+
+### Optional Improvements
+- [ ] Migrate to S3 for images (if base64 becomes limiting)
+- [ ] Add web scraping for non-PDF sources
+- [ ] Implement semantic caching
+- [ ] Add support for more document types (DOCX, HTML, etc.)
 
 ---
 
