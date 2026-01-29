@@ -24,6 +24,7 @@ from config import (
     IMAGE_DIR,
     IMAGE_STORAGE_FORMAT,
 )
+from .image_storage import get_image_storage_manager
 
 
 # Initialize parser with configuration (singleton)
@@ -108,13 +109,12 @@ async def parse_pdf(pdf_path: str, doc_id: str) -> List[TextNode]:
         text_node.metadata["page_number"] = i + 1
         text_node.metadata["image_path"] = image_node.image_path
         
-        # If base64 format, encode and store in metadata
+        # If base64 format, encode and store in metadata using ImageStorageManager
         if IMAGE_STORAGE_FORMAT == "base64":
             try:
-                import base64
-                with open(image_node.image_path, "rb") as img_file:
-                    image_data = img_file.read()
-                    text_node.metadata["image_b64"] = base64.b64encode(image_data).decode('utf-8')
+                storage_manager = get_image_storage_manager()
+                # This will compress, resize, and add data URI prefix
+                text_node.metadata["image_b64"] = storage_manager._encode_base64(image_node.image_path)
             except Exception as e:
                 print(f"Warning: Failed to encode image to base64: {e}")
         

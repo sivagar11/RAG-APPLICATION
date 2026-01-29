@@ -53,11 +53,11 @@ def _get_qdrant_vector_store():
             "Run: pip install llama-index-vector-stores-qdrant qdrant-client"
         )
     
-    # Initialize Qdrant client
+    # Initialize Qdrant client with extended timeout for large payloads
     client = qdrant_client.QdrantClient(
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,
-        timeout=60,
+        timeout=300,  # 5 minutes for large uploads
     )
     
     # Create vector store

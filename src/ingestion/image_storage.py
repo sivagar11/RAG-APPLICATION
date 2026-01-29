@@ -135,18 +135,36 @@ class ImageStorageManager:
         
         return metadata
     
-    def _encode_base64(self, image_path: str) -> str:
-        """Encode image as base64 string.
+    def _encode_base64(self, image_path: str, max_size: int = 800, quality: int = 60) -> str:
+        """Encode image as base64 string with compression.
         
         Args:
             image_path: Path to image file
+            max_size: Maximum width/height (images will be resized to fit)
+            quality: JPEG quality (1-100, lower = smaller file)
             
         Returns:
-            Base64 encoded string
+            Base64 encoded string (data URI format)
         """
-        with open(image_path, "rb") as f:
-            image_data = f.read()
-        return base64.b64encode(image_data).decode('utf-8')
+        # Open and compress image
+        img = Image.open(image_path)
+        
+        # Resize if too large (maintain aspect ratio)
+        if max(img.size) > max_size:
+            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        
+        # Convert to RGB (in case of RGBA or other formats)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Save as JPEG with compression
+        buffer = BytesIO()
+        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+        buffer.seek(0)
+        
+        # Encode to base64 with data URI prefix
+        image_b64 = base64.b64encode(buffer.read()).decode('utf-8')
+        return f"data:image/jpeg;base64,{image_b64}"
     
     def _create_thumbnail_b64(
         self, 

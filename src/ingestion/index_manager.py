@@ -147,8 +147,17 @@ def create_new_index() -> VectorStoreIndex:
     # Setup LLM settings
     _setup_llm_settings()
     
-    # Create new empty index
-    _index = VectorStoreIndex([])
+    if VECTOR_DB_TYPE == "local":
+        # Create new empty index with local storage
+        _index = VectorStoreIndex([])
+    else:
+        # Create new index with external vector DB (Qdrant, etc.)
+        vector_store = get_vector_store()
+        storage_context = get_storage_context(vector_store)
+        _index = VectorStoreIndex(
+            [],
+            storage_context=storage_context
+        )
     
     return _index
 

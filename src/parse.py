@@ -21,6 +21,8 @@ from config import (
     PERSIST_DIR,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
+    VECTOR_DB_TYPE,
+    QDRANT_COLLECTION,
     validate_config,
     print_config_summary,
 )
@@ -100,13 +102,26 @@ async def main():
     
     print(f"\n🔨 Building vector index with {len(all_nodes)} nodes...")
     
-    # Insert all nodes into the index
-    index.insert_nodes(all_nodes)
+    # Insert nodes in small batches to avoid payload size and timeout limits
+    batch_size = 2  # Upload 2 pages at a time for reliable uploads
+    total_batches = (len(all_nodes) + batch_size - 1) // batch_size
+    
+    for batch_num in range(total_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min(start_idx + batch_size, len(all_nodes))
+        batch = all_nodes[start_idx:end_idx]
+        
+        print(f"   Uploading batch {batch_num + 1}/{total_batches} ({len(batch)} nodes)...")
+        index.insert_nodes(batch)
     
     # Persist to storage
     persist_index()
     
-    print(f"✅ Index saved to {PERSIST_DIR}")
+    if VECTOR_DB_TYPE == "local":
+        print(f"✅ Index saved to {PERSIST_DIR}")
+    else:
+        print(f"✅ Index saved to {VECTOR_DB_TYPE.upper()} (collection: {QDRANT_COLLECTION})")
+    
     print(f"\n📊 Summary:")
     print(f"   Documents indexed: {len(doc_ids)}")
     print(f"   Total pages: {len(all_nodes)}")

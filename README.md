@@ -22,10 +22,12 @@ make api    # or: cd src && uvicorn api.main:app --reload
 ```
 
 **Architecture:**
-- **Vector Database**: Qdrant Cloud (for embeddings + images)
-- **Image Storage**: Base64 encoded in Qdrant
+- **Vector Database**: Qdrant Cloud (managed, scalable)
+- **Image Storage**: Compressed base64 in Qdrant (800px, 60% JPEG quality)
 - **LLM**: OpenAI or Gemini (configurable)
+- **Embeddings**: OpenAI text-embedding-3-small
 - **Parser**: LlamaParse for multimodal PDF extraction
+- **Batch Upload**: Smart batching for reliable uploads
 
 ## Table of Contents
 
@@ -94,9 +96,12 @@ make parse
 **What this does:**
 - ✅ Parses ALL PDFs in `data/` with LlamaParse
 - ✅ Extracts text and page images
-- ✅ Converts images to base64
+- ✅ Compresses & resizes images (800px max, 60% JPEG quality)
+- ✅ Converts images to base64 with data URI format
+- ✅ Uploads in batches of 2 pages (avoids timeouts)
 - ✅ Stores vectors and images in Qdrant Cloud
 - ✅ Assigns UUID to each document for tracking
+- ✅ Excludes images from embeddings (prevents token overflow)
 
 **Output:**
 ```
@@ -556,14 +561,53 @@ python scripts/test_ingestion.py  # Run full test suite
 
 ---
 
+## Performance Optimizations
+
+### Image Compression
+To handle Qdrant Cloud's 32MB payload limit and ensure fast uploads:
+
+- **Resizing**: Images resized to 800px max (maintains aspect ratio)
+- **JPEG Compression**: 60% quality (balances size vs quality)
+- **Data URI Format**: Proper `data:image/jpeg;base64,` prefix for browser display
+- **Result**: ~200-300KB per page (vs 2-3MB uncompressed)
+
+### Batch Upload Strategy
+- **Batch Size**: 2 pages per upload
+- **Timeout**: 300 seconds (5 minutes) for reliable uploads
+- **Retry Logic**: Built into Qdrant client
+- **Progress Tracking**: Shows batch progress during indexing
+
+### Embedding Optimization
+- **Excluded Metadata**: Images excluded from embedding API calls
+- **Token Limit**: Prevents "Requested X tokens, max 300K" errors
+- **Cost Savings**: Only text is embedded, images stored separately
+
+### Configuration
+```python
+# image_storage.py
+max_size = 800   # pixels
+quality = 60     # JPEG quality %
+
+# parse.py
+batch_size = 2   # pages per upload
+
+# vector_store.py
+timeout = 300    # seconds
+```
+
+---
+
 ## Next Steps
 
 ### Completed ✅
 - [x] Qdrant Cloud integration
-- [x] Base64 image storage
+- [x] Compressed base64 image storage
+- [x] Smart batch uploads (2 pages at a time)
+- [x] Image compression (800px, 60% quality)
+- [x] Embedding optimization (excludes images)
 - [x] Document tracking with SOURCE relationships
 - [x] FastAPI REST API
-- [x] Streamlit UI
+- [x] Streamlit UI with image display
 - [x] Multi-worker support
 - [x] CRUD operations
 
@@ -586,7 +630,8 @@ python scripts/test_ingestion.py  # Run full test suite
 ## Additional Documentation
 
 - [`src/ingestion/README.md`](src/ingestion/README.md) - Detailed module API documentation
-- [`docs.md`](docs.md) - LlamaIndex documentation reference and answers
+- [`SETUP_COMPLETE.md`](SETUP_COMPLETE.md) - Production setup guide
+- [`VECTOR_DB_MIGRATION.md`](VECTOR_DB_MIGRATION.md) - Vector database migration guide
 
 ---
 
