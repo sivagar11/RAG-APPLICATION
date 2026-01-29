@@ -1,0 +1,24 @@
+# Core Dependencies
+streamlit
+python-dotenv
+llama-cloud-services  # For LlamaParse
+
+# LlamaIndex
+llama-index-core
+llama-index-embeddings-openai
+llama-index-llms-openai
+llama-index-llms-google-genai
+
+# API Clients (dependencies)
+openai
+google-generativeai
+
+# FastAPI and Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart  # For file uploads
+
+# Supporting Libraries
+pydantic>=2.0.0
+typing_extensions
+pillow
